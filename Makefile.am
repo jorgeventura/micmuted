@@ -1,7 +1,6 @@
 OPTIONS=foreign
 
-bin_PROGRAMS=micmuted pacat
+bin_PROGRAMS=micmuted
 
 micmuted_SOURCES=micmuted.c
 
-pacat_SOURCES=pacat.c
