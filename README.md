@@ -8,4 +8,4 @@ Generaly pulseaudio is started when in a desktop gui session what means, the pro
 # Access to the LED class by user
 Change access to /sys/class/leds/platform::micmute/brightness:
 
-# `echo 'SUBSYSTEM=="leds", ACTION=="add", KERNEL=="platform::micmute", RUN+="/bin/chmod a+w /sys/class/leds/%k/brightness"' > /etc/udev/rules.d/82-micmute-led.rules`
+# ```echo 'SUBSYSTEM=="leds", ACTION=="add", KERNEL=="platform::micmute", RUN+="/bin/chmod a+w /sys/class/leds/%k/brightness"' > /etc/udev/rules.d/82-micmute-led.rules```
