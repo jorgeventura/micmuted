@@ -23,70 +23,32 @@
 
 #define LED_MUTE	"/sys/class/leds/platform::micmute/brightness"
 
-static int source_index;
-static char description[256];
-
-void pa_source_info_name2index_cb( pa_context *c, const pa_source_info *i, int eol, void *userdata)
-{
-   if (i != NULL) {
-      pa_context_state_t state = pa_context_get_state(c);
-      
-      switch  (state) {
-         case PA_CONTEXT_READY:
-      
-	   source_index = i->index;
-	   
-           if (!eol) {
-              int fd = open(LED_MUTE, O_WRONLY); 
-              int rc;
-
-              if (i->mute == 0) {
-                 syslog(LOG_INFO, "Microphone unmuted: %s", i->description);
-                 rc = write(fd, "0", 1);
-              } else
-              if (i->mute == 1) {
-                 syslog(LOG_INFO, "Microphone muted: %s", i->description);
-                 rc = write(fd, "1", 1);
-              }
-
-              if (rc < 0) {
-                 syslog(LOG_ERR, "Led access error\n");
-              }
-              close(fd);
-           }
-           break;
-      }
-   }
-
-}
 
 void pa_source_info_cb( pa_context *c, const pa_source_info *i, int eol, void *userdata)
 {
    if (i != NULL) {
       pa_context_state_t state = pa_context_get_state(c);
 
-      switch  (state) {
-         case PA_CONTEXT_READY:
-	   //printf("Mute: %i\n", i->mute);
-           if (!eol) {
-              int fd = open(LED_MUTE, O_WRONLY); 
-              int rc;
+      if (state == PA_CONTEXT_READY) {
+         
+	 //printf("Mute: %i, Index:%i\n", i->mute, i->index);
+	 
+	 char ch[2];
+         int rc, fd = open(LED_MUTE, O_WRONLY); 
 
-              if (i->mute == 0) {
-                 syslog(LOG_INFO, "Microphone unmuted: %s", i->description);
-                 rc = write(fd, "0", 1);
-              } else
-              if (i->mute == 1) {
-                 syslog(LOG_INFO, "Microphone muted: %s", i->description);
-                 rc = write(fd, "1", 1);
-              }
+         if (i->mute == 0) {
+            syslog(LOG_INFO, "Microphone unmuted: %s", i->description);
+            rc = write(fd, "0", 1);
+         } else
+         if (i->mute == 1) {
+            syslog(LOG_INFO, "Microphone muted: %s", i->description);
+            rc = write(fd, "1", 1);
+         }
 
-              if (rc < 0) {
-                 syslog(LOG_ERR, "Led access error\n");
-              }
-              close(fd);
-           }
-           break;
+         if (rc < 0) {
+            syslog(LOG_ERR, "Led access error\n");
+         }
+         close(fd);
       }
    }
 }
@@ -98,8 +60,13 @@ void pa_context_subscribe_cb(pa_context *c, pa_subscription_event_type_t t, uint
  
    switch  (state) {
       case PA_CONTEXT_READY:
-	if (source_index > 0) {
-	   pa_context_get_source_info_by_index(c, source_index, pa_source_info_cb, NULL);
+	//printf("Event mask: %i\n", t);
+	if (t & (PA_SUBSCRIPTION_EVENT_CHANGE | PA_SUBSCRIPTION_EVENT_SOURCE | PA_SUBSCRIPTION_EVENT_REMOVE | PA_SUBSCRIPTION_EVENT_SINK_INPUT)) {
+	   //printf("Event mask: %i\n", t);
+	   pa_context_get_source_info_by_index(c, -1, pa_source_info_cb, NULL);
+	} else {
+	   //printf("Index:%i\n", idx);
+	   pa_context_get_source_info_by_index(c, idx, pa_source_info_cb, NULL);
 	}
 	break;
    }
@@ -117,17 +84,13 @@ void pa_state_cb(pa_context *c, void *userdata)
                  pa_context_set_subscribe_callback(c, pa_context_subscribe_cb, NULL);
 
                  //set events mask and enable event callback.
-                 pa_operation* op = pa_context_subscribe(c, PA_SUBSCRIPTION_MASK_SOURCE, NULL, NULL);
+                 //pa_operation* op = pa_context_subscribe(c, PA_SUBSCRIPTION_MASK_SOURCE, NULL, NULL);
+                 pa_operation* op = pa_context_subscribe(c, PA_SUBSCRIPTION_MASK_ALL, NULL, NULL);
        
                  if (op)
                    pa_operation_unref(op);
-
-		 if (source_index > 0) {
-		    pa_context_get_source_info_by_index(c, source_index, pa_source_info_cb, NULL);
-		 } else
-		 if (description[0] != '\0') {
-		    pa_context_get_source_info_by_name(c, description, pa_source_info_name2index_cb, NULL);
-		 }
+		    
+		 pa_context_get_source_info_by_index(c, -1, pa_source_info_cb, NULL);
 	      }
 	      break;
 
@@ -140,18 +103,13 @@ static void help(const char *argv0) {
     printf("%s [options]\n\n"
            "  -h, --help                            Show this help\n"
            "      --version                         Show version\n\n"
-           "      --source-name=NAME                Source name as in Source.name"
-	   "                                           ex: alsa_input.pci-0000_00_1f.3-platform-skl_hda_dsp_generic.HiFi__hw_sofhdadsp_6__source)\n"
-           "      --source-index=IDX                Source index #\n"
            ,
            argv0);
 }
 
 
 enum {
-    ARG_VERSION = 256,
-    ARG_SOURCE_NAME,
-    ARG_SOURCE_INDEX
+    ARG_VERSION = 256
 };
 
 
@@ -161,8 +119,6 @@ int main(int argc, char* argv[])
    int rc;
     
    static const struct option long_options[] = {
-        {"source-name",  1, NULL, ARG_SOURCE_NAME},
-        {"source-index", 1, NULL, ARG_SOURCE_INDEX},
         {"version",      0, NULL, ARG_VERSION},
         {"help",         0, NULL, 'h'},
         {NULL,           0, NULL, 0}
@@ -181,15 +137,6 @@ int main(int argc, char* argv[])
                 rc = 0;
                 goto quit;
             
-	    case ARG_SOURCE_NAME:
-                sprintf(description, "%.*s", (int)sizeof(description), optarg);
-                rc = 0;
-		break;
-	    
-	    case ARG_SOURCE_INDEX:
-                source_index = (size_t) atoi(optarg);
-                break;
-
             default:
                 goto quit;
         }
